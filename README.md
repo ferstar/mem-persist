@@ -2,7 +2,7 @@
 
 Save Claude Code conversation threads to Nowledge Mem server via HTTP API.
 
-**Version 1.0.0** - Pure Python implementation using `uv run`.
+**Version 1.0.1** - Pure Python implementation using `uv run`.
 
 ## Overview
 
@@ -43,7 +43,10 @@ uv run python -m mem_persist save
 # With custom title
 uv run python -m mem_persist save --title "Implemented auth feature"
 
-# From specific project
+# From specific project (using environment variable)
+PROJECT_PATH=/path/to/project uv run python -m mem_persist save
+
+# From specific project (using CLI option)
 uv run python -m mem_persist save --project-path /path/to/project
 
 # Run diagnostics
@@ -94,6 +97,13 @@ MEM_API_URL=http://localhost:14243 uv run python -m mem_persist save
 - `MEM_API_URL` - API endpoint (default: `http://localhost:14243`)
 - `MEM_AUTH_TOKEN` - Bearer token (default: `helloworld`)
 - `MAX_MESSAGES` - Message limit, 0=unlimited (default: `0`)
+- `PROJECT_PATH` - Project directory path (default: current working directory)
+
+**Note on PROJECT_PATH**: When this skill is invoked from another project (e.g., as a Claude Code skill), the current working directory may be the skill's own directory. In such cases, you must explicitly set `PROJECT_PATH` to the actual project directory:
+
+```bash
+PROJECT_PATH=/home/user/my-project uv run python -m mem_persist save
+```
 
 ## Architecture
 

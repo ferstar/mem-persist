@@ -28,6 +28,11 @@ class Config:
             1. Existing environment variables
             2. Variables from .env file
             3. Default values
+
+        Project path priority:
+            1. project_path argument (CLI --project-path)
+            2. PROJECT_PATH environment variable
+            3. os.getcwd() (current directory)
         """
         # Load .env file (doesn't override existing env vars by default)
         if dotenv_path:
@@ -36,9 +41,16 @@ class Config:
             # Search for .env in current directory and parent directories
             load_dotenv(override=False)
 
+        # Determine project path with proper priority
+        resolved_project_path = (
+            project_path  # CLI argument has highest priority
+            or os.getenv("PROJECT_PATH")  # Then environment variable
+            or os.getcwd()  # Finally fall back to current directory
+        )
+
         return cls(
             api_url=os.getenv("MEM_API_URL", "http://localhost:14243"),
             auth_token=os.getenv("MEM_AUTH_TOKEN", "helloworld"),
-            project_path=Path(project_path or os.getcwd()),
+            project_path=Path(resolved_project_path),
             max_messages=int(os.getenv("MAX_MESSAGES", "0")),
         )

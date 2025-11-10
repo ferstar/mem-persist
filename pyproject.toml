@@ -1,6 +1,6 @@
 [project]
 name = "mem-persist"
-version = "1.0.0"
+version = "1.0.1"
 description = "Save Claude Code conversation threads to Nowledge Mem server"
 readme = "README.md"
 requires-python = "~=3.13.2"

@@ -18,20 +18,22 @@ Trigger this skill when user says:
 
 ## Usage
 
-**Save current session**:
+**Save current session** (when called from another project):
 ```bash
-uv run python -m mem_persist save
+PROJECT_PATH=/path/to/actual/project uv run python -m mem_persist save
 ```
 
 **With custom title**:
 ```bash
-uv run python -m mem_persist save --title "Your title here"
+PROJECT_PATH=/path/to/actual/project uv run python -m mem_persist save --title "Your title here"
 ```
 
 **Run diagnostics** (if issues occur):
 ```bash
-uv run python -m mem_persist diagnose
+PROJECT_PATH=/path/to/actual/project uv run python -m mem_persist diagnose
 ```
+
+**Note for Claude Code**: When invoking this skill from another project, always set `PROJECT_PATH` environment variable to the actual project directory. Use the current working directory from `<env>` block.
 
 ## What Happens
 

@@ -194,9 +194,18 @@ Trigger on user requests like:
 - "持久化当前对话" / "persist current conversation"
 - "备份当前会话" / "backup this session"
 
-**Invocation**:
+**Invocation from another project**:
 ```bash
-uv run python -m mem_persist save
+# Get current working directory from <env> block
+PROJECT_PATH=/actual/project/path uv run python -m mem_persist save
+```
+
+**IMPORTANT**: When this skill is invoked from another project, you MUST pass the actual project path via `PROJECT_PATH` environment variable. Use the working directory from the `<env>` block, NOT the skill's own directory.
+
+**Example**:
+```bash
+# If <env> shows: Working directory: /home/user/my-app
+PROJECT_PATH=/home/user/my-app uv run python -m mem_persist save
 ```
 
 ## Important Notes

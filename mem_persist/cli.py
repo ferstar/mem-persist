@@ -17,7 +17,7 @@ from .session import (
 
 
 @click.group()
-@click.version_option(version="2.0.0", prog_name="mem-persist")
+@click.version_option(version="1.0.1", prog_name="mem-persist")
 def cli():
     """Save Claude Code conversation threads to Nowledge Mem"""
     pass
