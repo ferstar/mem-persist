@@ -1,0 +1,14 @@
+[project]
+name = "mem-persist"
+version = "1.0.0"
+description = "Save Claude Code conversation threads to Nowledge Mem server"
+readme = "README.md"
+requires-python = "~=3.13.2"
+dependencies = [
+    "click>=8.3.0",
+    "httpx>=0.28.1",
+    "python-dotenv>=1.2.1",
+]
+
+[project.scripts]
+mem-persist = "mem_persist.cli:cli"
