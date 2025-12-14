@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .api import APIClient
 from .config import Config
-from .session import find_session_directory
+from .session import find_latest_session_for_project, SessionNotFoundError
 
 
 class Colors:
@@ -70,20 +70,18 @@ def run_diagnostics(config: Config) -> bool:
     print(f"\nChecking project: {config.project_path}")
     if config.project_path.exists():
         print_status(f"Project directory exists", True)
+        print_info(f"Session source hint: {config.session_source}")
 
         try:
-            session_dir = find_session_directory(config.project_path)
-            print_status(f"Session directory found: {session_dir}", True)
-
-            # Count session files
-            session_files = [
-                f for f in session_dir.glob("*.jsonl")
-                if not f.name.startswith("agent-")
-            ]
-            print_info(f"Found {len(session_files)} session file(s)")
-
-        except Exception as e:
-            print_status(f"Session directory not found: {e}", False)
+            session_file, session_source = find_latest_session_for_project(
+                config.project_path,
+                config.session_source,
+            )
+            print_status("Latest session file located", True)
+            print_info(f"Source: {session_source}")
+            print_info(f"Session file: {session_file}")
+        except SessionNotFoundError as e:
+            print_status(f"Session file not found: {e}", False)
             all_passed = False
     else:
         print_status(f"Project directory does not exist", False)

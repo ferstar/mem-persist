@@ -15,6 +15,7 @@ class Config:
     auth_token: str
     project_path: Path
     max_messages: int = 0  # 0 = unlimited
+    session_source: str = "auto"
 
     @classmethod
     def from_env(cls, project_path: str | None = None, dotenv_path: str | None = None) -> "Config":
@@ -48,9 +49,14 @@ class Config:
             or os.getcwd()  # Finally fall back to current directory
         )
 
+        session_source = os.getenv("MEM_SESSION_SOURCE", "auto").strip().lower() or "auto"
+        if session_source not in {"auto", "claude", "codex"}:
+            session_source = "auto"
+
         return cls(
             api_url=os.getenv("MEM_API_URL", "http://localhost:14243"),
             auth_token=os.getenv("MEM_AUTH_TOKEN", "helloworld"),
             project_path=Path(resolved_project_path),
             max_messages=int(os.getenv("MAX_MESSAGES", "0")),
+            session_source=session_source,
         )

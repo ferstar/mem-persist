@@ -10,8 +10,7 @@ from .diagnostics import Colors, print_info, run_diagnostics
 from .session import (
     SessionNotFoundError,
     build_thread_request,
-    find_latest_session,
-    find_session_directory,
+    find_latest_session_for_project,
     parse_session_file,
 )
 
@@ -19,7 +18,7 @@ from .session import (
 @click.group()
 @click.version_option(version="1.0.1", prog_name="mem-persist")
 def cli():
-    """Save Claude Code conversation threads to Nowledge Mem"""
+    """Save Claude Code 或 Codex CLI conversation threads to Nowledge Mem"""
     pass
 
 
@@ -34,25 +33,35 @@ def cli():
     help="Project directory path (default: current directory)",
 )
 @click.option(
+    "--source",
+    type=click.Choice(["auto", "claude", "codex"], case_sensitive=False),
+    help="Session source hint (override auto-detection)",
+)
+@click.option(
     "--debug",
     is_flag=True,
     help="Enable debug mode (show full tracebacks)",
 )
-def save(title, project_path, debug):
+def save(title, project_path, source, debug):
     """Save current session to Nowledge Mem"""
     try:
         # Load config
         config = Config.from_env(project_path)
+        if source:
+            config.session_source = source.lower()
 
         click.echo(f"{Colors.BLUE}[mem-persist]{Colors.RESET} 🚀 Saving current session...\n")
 
-        # Find session directory and file
-        session_dir = find_session_directory(config.project_path)
-        session_file = find_latest_session(session_dir)
+        # Find session file from Claude Code or Codex CLI
+        session_file, session_source = find_latest_session_for_project(
+            config.project_path,
+            config.session_source,
+        )
 
         session_size = session_file.stat().st_size / 1024  # KB
         print_info(f"Project: {config.project_path.name}")
         print_info(f"Session: {session_file.name} ({session_size:.1f} KB)")
+        print_info(f"Source: {session_source}")
 
         # Parse session
         if config.max_messages == 0:
@@ -75,6 +84,7 @@ def save(title, project_path, debug):
             session_file=session_file,
             custom_title=title or "",
             total_lines=total_lines,
+            source=session_source,
         )
 
         print_info(f"Thread ID: {payload['thread_id']}")
@@ -117,9 +127,16 @@ def save(title, project_path, debug):
     type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=str),
     help="Project directory path (default: current directory)",
 )
-def diagnose(project_path):
+@click.option(
+    "--source",
+    type=click.Choice(["auto", "claude", "codex"], case_sensitive=False),
+    help="Session source hint (override auto-detection)",
+)
+def diagnose(project_path, source):
     """Run diagnostic checks"""
     config = Config.from_env(project_path)
+    if source:
+        config.session_source = source.lower()
     success = run_diagnostics(config)
     sys.exit(0 if success else 1)
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**mem-persist** is a Claude Code skill that saves conversation threads to a remote Nowledge Mem server via HTTP API. It solves the problem where MCP's `thread_persist` tool cannot access local session files when the MCP server is deployed remotely (e.g., via Tailscale).
+**mem-persist** is a Claude Code/Codex CLI skill that saves conversation threads to a remote Nowledge Mem server via HTTP API. It solves the problem where MCP's `thread_persist` tool cannot access local session files when the MCP server is deployed remotely (e.g., via Tailscale). The CLI now auto-detects whether the session originates from Claude Code (`~/.claude/projects`) or Codex (`~/.codex/sessions`).
 
 **Version 2.0**: Pure Python implementation using Click CLI framework and `uv` for dependency management.
 

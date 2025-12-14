@@ -1,6 +1,6 @@
 # mem-persist Skill
 
-Save Claude Code conversation threads to Nowledge Mem server via HTTP API.
+Save Claude Code 或 Codex CLI 会话到 Nowledge Mem 服务器。
 
 **Version 1.0.1** - Pure Python implementation using `uv run`.
 
@@ -23,10 +23,17 @@ This breaks when:
 
 This skill:
 1. ✅ Runs locally on client machine (has filesystem access)
-2. ✅ Reads Claude Code session files from project directory
+2. ✅ Reads Claude Code 或 Codex CLI session files
 3. ✅ Converts session format to Nowledge Mem API format
 4. ✅ Sends data via HTTP API to remote server
 5. ✅ Works with any network topology (local, VPN, Tailscale)
+
+### Supported CLIs
+
+- **Claude Code CLI**：读取 `~/.claude/projects/-<encoded>/<session>.jsonl`
+- **Codex CLI**：读取 `~/.codex/sessions/YYYY/MM/DD/*.jsonl` 并按 `cwd` 匹配项目
+
+无需配置，脚本会自动探测当前项目来自哪个 CLI。
 
 ## Installation
 
@@ -39,6 +46,9 @@ Dependencies are managed by `uv`, no manual installation needed.
 ```bash
 # Save current session (from current directory)
 uv run python -m mem_persist save
+
+# Force Codex session parsing (skip auto-detect)
+uv run python -m mem_persist save --source codex
 
 # With custom title
 uv run python -m mem_persist save --title "Implemented auth feature"
@@ -98,6 +108,7 @@ MEM_API_URL=http://localhost:14243 uv run python -m mem_persist save
 - `MEM_AUTH_TOKEN` - Bearer token (default: `helloworld`)
 - `MAX_MESSAGES` - Message limit, 0=unlimited (default: `0`)
 - `PROJECT_PATH` - Project directory path (default: current working directory)
+- `MEM_SESSION_SOURCE` - `auto` / `claude` / `codex` (default: `auto`)
 
 **Note on PROJECT_PATH**: When this skill is invoked from another project (e.g., as a Claude Code skill), the current working directory may be the skill's own directory. In such cases, you must explicitly set `PROJECT_PATH` to the actual project directory:
 
@@ -124,10 +135,7 @@ PROJECT_PATH=/home/user/my-project uv run python -m mem_persist save
 
 ## Data Flow
 
-1. **Discovery**: Find session directory using path encoding rules:
-   - `/.` → `--` (hidden directories)
-   - `/` → `-` (regular directories)
-   - Example: `/home/user/.claude/skills` → `-home-user--claude-skills`
+1. **Discovery**: 自动检测 Claude Code (`~/.claude/projects`) 或 Codex (`~/.codex/sessions`) 的最新会话文件，并按项目路径匹配
 2. **Read**: Load most recent session JSON file
 3. **Transform**: Convert to Nowledge Mem format:
    ```json
@@ -227,11 +235,11 @@ uv run python -m mem_persist diagnose
 
 ### Extending
 
-To support other AI coding tools (Cursor, Codex, etc.):
+To support other AI coding tools (Cursor 等):
 
-1. Update `find_session_directory()` in `session.py` with new path patterns
+1. Extend `find_latest_session_for_project()` in `session.py` with new discovery logic
 2. Add format-specific parsers in `parse_session_file()`
-3. Update `source` field in API payload to identify the tool
+3. Update `source` + `participants` fields in API payload to identify the tool
 
 All logic is now in Python modules, making it easier to test and extend.
 
