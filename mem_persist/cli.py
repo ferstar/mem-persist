@@ -1,11 +1,12 @@
 """Command-line interface for mem-persist using Click"""
 
+import logging
 import sys
 
 import click
 
 from .api import APIClient, APIError
-from .config import Config
+from .config import Config, ConfigError
 from .diagnostics import Colors, print_info, run_diagnostics
 from .session import (
     SessionNotFoundError,
@@ -14,11 +15,21 @@ from .session import (
     parse_session_file,
 )
 
+# Configure logging
+logging.basicConfig(
+    level=logging.WARNING,
+    format="%(levelname)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# Version - keep in sync with pyproject.toml
+VERSION = "1.2.0"
+
 
 @click.group()
-@click.version_option(version="1.0.1", prog_name="mem-persist")
+@click.version_option(version=VERSION, prog_name="mem-persist")
 def cli():
-    """Save Claude Code 或 Codex CLI conversation threads to Nowledge Mem"""
+    """Save Claude Code or Codex CLI conversation threads to Nowledge Mem"""
     pass
 
 
@@ -42,15 +53,19 @@ def cli():
     is_flag=True,
     help="Enable debug mode (show full tracebacks)",
 )
-def save(title, project_path, source, debug):
+def save(title: str | None, project_path: str | None, source: str | None, debug: bool):
     """Save current session to Nowledge Mem"""
-    try:
-        # Load config
-        config = Config.from_env(project_path)
-        if source:
-            config.session_source = source.lower()
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
-        click.echo(f"{Colors.BLUE}[mem-persist]{Colors.RESET} 🚀 Saving current session...\n")
+    try:
+        # Load config with session_source from CLI
+        config = Config.from_env(
+            project_path=project_path,
+            session_source=source,
+        )
+
+        click.echo(f"{Colors.BLUE}[mem-persist]{Colors.RESET} Saving current session...\n")
 
         # Find session file from Claude Code or Codex CLI
         session_file, session_source = find_latest_session_for_project(
@@ -63,17 +78,13 @@ def save(title, project_path, source, debug):
         print_info(f"Session: {session_file.name} ({session_size:.1f} KB)")
         print_info(f"Source: {session_source}")
 
-        # Parse session
-        if config.max_messages == 0:
-            click.echo(f"\n{Colors.BLUE}[mem-persist]{Colors.RESET} 🔄 Parsing session (no limit)...")
-        else:
-            click.echo(f"\n{Colors.BLUE}[mem-persist]{Colors.RESET} 🔄 Parsing session (max {config.max_messages} messages)...")
+        # Parse session - returns ParseResult with messages AND total_lines
+        limit_msg = "no limit" if config.max_messages == 0 else f"max {config.max_messages}"
+        click.echo(f"\n{Colors.BLUE}[mem-persist]{Colors.RESET} Parsing session ({limit_msg})...")
 
-        messages = parse_session_file(session_file, config.max_messages)
-
-        # Count lines for metadata
-        with session_file.open("r") as f:
-            total_lines = sum(1 for _ in f)
+        parse_result = parse_session_file(session_file, config.max_messages)
+        messages = parse_result.messages
+        total_lines = parse_result.total_lines  # No need to re-read the file!
 
         print_info(f"Extracted {len(messages)} messages from {total_lines} lines")
 
@@ -90,32 +101,44 @@ def save(title, project_path, source, debug):
         print_info(f"Thread ID: {payload['thread_id']}")
         print_info(f"Title: {payload['title'][:60]}")
 
-        # Upload to API
-        click.echo(f"\n{Colors.BLUE}[mem-persist]{Colors.RESET} 📤 Uploading to Nowledge Mem...")
+        # Upload to API with connection pooling
+        click.echo(f"\n{Colors.BLUE}[mem-persist]{Colors.RESET} Uploading to Nowledge Mem...")
 
-        client = APIClient(config.api_url, config.auth_token)
-        response = client.save_thread(payload)
+        with APIClient(
+            config.api_url,
+            config.auth_token,
+            timeout_health=config.timeout_health,
+            timeout_request=config.timeout_request,
+        ) as client:
+            response = client.save_thread(payload)
 
         # Parse response
         thread_data = response.get("thread", {})
 
-        click.echo(f"\n{Colors.GREEN}✅ Thread saved successfully!{Colors.RESET}\n")
-        print_info(f"🆔 Thread ID: {thread_data.get('thread_id', 'N/A')}")
-        print_info(f"🔗 Server ID: {thread_data.get('id', 'N/A')}")
-        print_info(f"📊 Messages: {thread_data.get('message_count', 'N/A')}")
+        click.echo(f"\n{Colors.GREEN}Thread saved successfully!{Colors.RESET}\n")
+        print_info(f"Thread ID: {thread_data.get('thread_id', 'N/A')}")
+        print_info(f"Server ID: {thread_data.get('id', 'N/A')}")
+        print_info(f"Messages: {thread_data.get('message_count', len(messages))}")
 
-        click.echo(f"\n{Colors.BLUE}[mem-persist]{Colors.RESET} ✨ Done! Conversation stored in Nowledge Mem.\n")
+        click.echo(f"\n{Colors.BLUE}[mem-persist]{Colors.RESET} Done! Conversation stored in Nowledge Mem.\n")
+
+    except ConfigError as e:
+        click.echo(f"\n{Colors.RED}Configuration Error:{Colors.RESET} {e}\n", err=True)
+        click.echo("Set MEM_AUTH_TOKEN via environment variable or .env file.", err=True)
+        sys.exit(1)
 
     except SessionNotFoundError as e:
-        click.echo(f"\n{Colors.RED}✗ Error:{Colors.RESET} {e}\n", err=True)
+        click.echo(f"\n{Colors.RED}Session Error:{Colors.RESET} {e}\n", err=True)
         sys.exit(1)
 
     except APIError as e:
-        click.echo(f"\n{Colors.RED}✗ API Error:{Colors.RESET} {e}\n", err=True)
+        click.echo(f"\n{Colors.RED}API Error:{Colors.RESET} {e}\n", err=True)
+        if hasattr(e, 'status_code') and e.status_code:
+            click.echo(f"HTTP Status: {e.status_code}", err=True)
         sys.exit(1)
 
     except Exception as e:
-        click.echo(f"\n{Colors.RED}✗ Unexpected error:{Colors.RESET} {e}\n", err=True)
+        click.echo(f"\n{Colors.RED}Unexpected error:{Colors.RESET} {e}\n", err=True)
         if debug:
             raise
         sys.exit(1)
@@ -132,13 +155,18 @@ def save(title, project_path, source, debug):
     type=click.Choice(["auto", "claude", "codex"], case_sensitive=False),
     help="Session source hint (override auto-detection)",
 )
-def diagnose(project_path, source):
+def diagnose(project_path: str | None, source: str | None):
     """Run diagnostic checks"""
-    config = Config.from_env(project_path)
-    if source:
-        config.session_source = source.lower()
-    success = run_diagnostics(config)
-    sys.exit(0 if success else 1)
+    try:
+        config = Config.from_env(
+            project_path=project_path,
+            session_source=source,
+        )
+        success = run_diagnostics(config)
+        sys.exit(0 if success else 1)
+    except ConfigError as e:
+        click.echo(f"\n{Colors.RED}Configuration Error:{Colors.RESET} {e}\n", err=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
