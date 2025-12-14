@@ -1,265 +1,97 @@
-# mem-persist Skill
+# mem-persist
 
-Save Claude Code 或 Codex CLI 会话到 Nowledge Mem 服务器。
-
-**Version 1.0.1** - Pure Python implementation using `uv run`.
+Save Claude Code / Codex CLI 会话到 Nowledge Mem 服务器。
 
 ## Overview
 
-This skill solves the remote MCP client problem described in [nowledge-mem#7](https://github.com/nowledge-co/nowledge-mem/issues/7) by using HTTP API instead of filesystem access.
+解决远程 MCP 服务器无法访问本地会话文件的问题（参见 [nowledge-mem#7](https://github.com/nowledge-co/nowledge-mem/issues/7)）。
 
-### The Problem
+**支持的 CLI**:
+- **Claude Code**: `~/.claude/projects/-<encoded>/<session>.jsonl`
+- **Codex CLI**: `~/.codex/sessions/YYYY/MM/DD/*.jsonl`
 
-The MCP `thread_persist` tool requires:
-1. Direct filesystem access to session files
-2. MCP server and client on same machine
-
-This breaks when:
-- MCP server is remote (e.g., via Tailscale or VPN)
-- Client runs on different machine (laptop)
-- Server cannot access client's local session files
-
-### The Solution
-
-This skill:
-1. ✅ Runs locally on client machine (has filesystem access)
-2. ✅ Reads Claude Code 或 Codex CLI session files
-3. ✅ Converts session format to Nowledge Mem API format
-4. ✅ Sends data via HTTP API to remote server
-5. ✅ Works with any network topology (local, VPN, Tailscale)
-
-### Supported CLIs
-
-- **Claude Code CLI**：读取 `~/.claude/projects/-<encoded>/<session>.jsonl`
-- **Codex CLI**：读取 `~/.codex/sessions/YYYY/MM/DD/*.jsonl` 并按 `cwd` 匹配项目
-
-无需配置，脚本会自动探测当前项目来自哪个 CLI。
-
-## Installation
-
-**Already installed** at: `~/.claude/skills/mem-persist/`
-
-Dependencies are managed by `uv`, no manual installation needed.
+自动探测会话来源，无需手动配置。
 
 ## Quick Start
 
 ```bash
-# Save current session (from current directory)
-uv run python -m mem_persist save
-
-# Force Codex session parsing (skip auto-detect)
-uv run python -m mem_persist save --source codex
-
-# With custom title
-uv run python -m mem_persist save --title "Implemented auth feature"
-
-# From specific project (using environment variable)
+# 保存当前会话
 PROJECT_PATH=/path/to/project uv run python -m mem_persist save
 
-# From specific project (using CLI option)
-uv run python -m mem_persist save --project-path /path/to/project
+# 自定义标题
+PROJECT_PATH=/path/to/project uv run python -m mem_persist save --title "Feature X"
 
-# Run diagnostics
-uv run python -m mem_persist diagnose
+# 强制指定来源
+PROJECT_PATH=/path/to/project uv run python -m mem_persist save --source codex
 
-# Get help
-uv run python -m mem_persist --help
+# 诊断
+PROJECT_PATH=/path/to/project uv run python -m mem_persist diagnose
 ```
 
 ## Configuration
 
-Environment variables can be set in three ways:
+**环境变量** (通过 `.env` 或 shell export):
 
-**1. Using .env file** (recommended):
-```bash
-# Copy the example file
-cp .env.example .env
+| 变量 | 必须 | 默认值 | 说明 |
+|------|------|--------|------|
+| `MEM_AUTH_TOKEN` | **是** | - | Bearer token |
+| `MEM_API_URL` | 否 | `http://localhost:14243` | API 地址 |
+| `PROJECT_PATH` | 否 | 当前目录 | 项目路径 |
+| `MAX_MESSAGES` | 否 | `0` (无限) | 最大消息数 |
+| `MEM_SESSION_SOURCE` | 否 | `auto` | `auto`/`claude`/`codex` |
+| `MEM_TIMEOUT_HEALTH` | 否 | `5.0` | 健康检查超时(秒) |
+| `MEM_TIMEOUT_REQUEST` | 否 | `30.0` | 请求超时(秒) |
 
-# Edit with your values
-vim .env
-```
-
-Example `.env` file:
+**.env 示例**:
 ```bash
 MEM_API_URL=http://your-server:14243
 MEM_AUTH_TOKEN=your-token-here
-MAX_MESSAGES=0
-```
-
-**2. Export in shell**:
-```bash
-export MEM_API_URL=http://localhost:14243
-export MEM_AUTH_TOKEN=your-token-here
-export MAX_MESSAGES=100
-```
-
-**3. Inline with command**:
-```bash
-MEM_API_URL=http://localhost:14243 uv run python -m mem_persist save
-```
-
-**Priority** (highest to lowest):
-1. Existing environment variables (shell exports)
-2. Variables from `.env` file
-3. Default values
-
-**Available variables**:
-- `MEM_API_URL` - API endpoint (default: `http://localhost:14243`)
-- `MEM_AUTH_TOKEN` - Bearer token (default: `helloworld`)
-- `MAX_MESSAGES` - Message limit, 0=unlimited (default: `0`)
-- `PROJECT_PATH` - Project directory path (default: current working directory)
-- `MEM_SESSION_SOURCE` - `auto` / `claude` / `codex` (default: `auto`)
-
-**Note on PROJECT_PATH**: When this skill is invoked from another project (e.g., as a Claude Code skill), the current working directory may be the skill's own directory. In such cases, you must explicitly set `PROJECT_PATH` to the actual project directory:
-
-```bash
-PROJECT_PATH=/home/user/my-project uv run python -m mem_persist save
 ```
 
 ## Architecture
 
 ```
 ┌─────────────────┐      HTTP POST /threads       ┌──────────────────┐
-│  Client Machine │ ───────────────────────────► │  MCP Server      │
-│  (Laptop)       │      with JSON payload        │  (Remote)        │
-│                 │                                │                  │
-│  1. Read local  │                                │  4. Store in     │
-│     session     │                                │     database     │
-│  2. Convert to  │                                │                  │
-│     API format  │                                │  5. Build graph  │
-│  3. Send via    │                                │                  │
-│     HTTP API    │                                │  6. Index for    │
-│                 │                                │     search       │
-└─────────────────┘                                └──────────────────┘
+│  Client Machine │ ───────────────────────────► │  Remote Server   │
+│                 │                               │                  │
+│  1. Read local  │                               │  4. Store in DB  │
+│     session     │                               │  5. Build graph  │
+│  2. Convert fmt │                               │  6. Index search │
+│  3. HTTP POST   │                               │                  │
+└─────────────────┘                               └──────────────────┘
 ```
-
-## Data Flow
-
-1. **Discovery**: 自动检测 Claude Code (`~/.claude/projects`) 或 Codex (`~/.codex/sessions`) 的最新会话文件，并按项目路径匹配
-2. **Read**: Load most recent session JSON file
-3. **Transform**: Convert to Nowledge Mem format:
-   ```json
-   {
-     "thread_id": "project_20251109_142918",
-     "title": "Claude Code Session - 2025-11-09",
-     "messages": [
-       {"role": "user", "content": "...", "timestamp": "..."},
-       {"role": "assistant", "content": "...", "timestamp": "..."}
-     ],
-     "participants": ["user", "claude"],
-     "source": "claude-code",
-     "project": "jura-arh",
-     "workspace": "/home/user/projects/jura-arh",
-     "metadata": {...}
-   }
-   ```
-4. **Send**: POST to `/threads` endpoint with Bearer token
-5. **Verify**: Check HTTP 200/201 response
-
-## Comparison with MCP Tool
-
-| Feature | MCP `thread_persist` | This Skill |
-|---------|---------------------|------------|
-| **Location** | Server-side | Client-side |
-| **Access** | Needs filesystem access | Uses HTTP API |
-| **Works remotely** | ❌ No | ✅ Yes |
-| **Network** | Same machine only | Any network |
-| **Authentication** | MCP protocol | HTTP Bearer token |
-| **Session format** | Direct file read | Converts to API format |
 
 ## Troubleshooting
 
-Run diagnostics:
 ```bash
 uv run python -m mem_persist diagnose
 ```
 
-This checks:
-- ✓ API connectivity
-- ✓ Authentication
-- ✓ Python version compatibility
-- ✓ Session directory existence
+**常见问题**:
 
-### Common Issues
-
-**"No session directory found"**
-- Claude Code hasn't created session files yet
-- Wrong project directory
-- Session files in non-standard location
-
-**"API connection failed"**
-- Server not running
-- Wrong API URL
-- Network/firewall issues
-- VPN/Tailscale not connected
-
-**"Authentication failed"**
-- Wrong token
-- Token expired
-- Server requires different auth method
+| 错误 | 原因 |
+|------|------|
+| `Configuration Error: MEM_AUTH_TOKEN is required` | 未设置认证 token |
+| `Session directory not found` | 项目没有会话文件，或路径错误 |
+| `API connection failed` | 服务器未运行 / URL 错误 / 网络问题 |
 
 ## Development
 
-### File Structure
-
 ```
 mem-persist/
-├── SKILL.md              # Skill metadata (for Claude)
-├── README.md             # This file (documentation)
-├── CLAUDE.md             # Instructions for Claude Code
-├── pyproject.toml        # Python project config
-└── mem_persist/          # Python package
-    ├── __init__.py       # Package init
-    ├── __main__.py       # Entry point for `python -m`
-    ├── cli.py            # Click CLI commands
-    ├── config.py         # Configuration management
-    ├── session.py        # Session discovery & parsing
-    ├── api.py            # HTTP API client
-    └── diagnostics.py    # Diagnostic utilities
+├── SKILL.md              # Skill 元数据
+├── README.md             # 本文档
+├── CLAUDE.md             # Claude Code 指南
+├── pyproject.toml        # Python 配置
+└── mem_persist/          # Python 包
+    ├── cli.py            # CLI 入口
+    ├── config.py         # 配置管理
+    ├── session.py        # 会话发现与解析
+    ├── api.py            # HTTP 客户端
+    └── diagnostics.py    # 诊断工具
 ```
 
-### Testing
-
-```bash
-# Test with debug output
-uv run python -m mem_persist save --debug
-
-# Test with custom config
-MEM_API_URL=http://localhost:14243 \
-MEM_AUTH_TOKEN=test \
-uv run python -m mem_persist save --title "Test"
-
-# Run diagnostics
-uv run python -m mem_persist diagnose
-```
-
-### Extending
-
-To support other AI coding tools (Cursor 等):
-
-1. Extend `find_latest_session_for_project()` in `session.py` with new discovery logic
-2. Add format-specific parsers in `parse_session_file()`
-3. Update `source` + `participants` fields in API payload to identify the tool
-
-All logic is now in Python modules, making it easier to test and extend.
-
-## Best Practices
-
-Following Claude Code Agent Skills optimization guidelines:
-
-- ✅ **Pure Python**: No shell scripts, easier to maintain and test
-- ✅ **Single command**: `uv run python -m mem_persist save` does everything
-- ✅ **Progressive disclosure**: SKILL.md is concise, README has details
-- ✅ **Environment-based config**: No hardcoded values
-- ✅ **Diagnostic tooling**: Built-in `diagnose` command
-- ✅ **Type-safe**: Modern Python with type hints
-
-## License
-
-Same as Nowledge Mem project.
-
-## Related
-
-- Issue: [nowledge-mem#7](https://github.com/nowledge-co/nowledge-mem/issues/7)
-- API Docs: https://mem.nowledge.co/docs/api
-- MCP Protocol: https://github.com/nowledge-co/nowledge-mem
+**扩展支持其他 CLI** (如 Cursor):
+1. 在 `session.py` 添加新的会话发现逻辑
+2. 添加格式解析器
+3. 更新 `source` 字段
