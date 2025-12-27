@@ -1,3 +1,11 @@
+# ⚠️ 已弃用 / DEPRECATED
+
+此仓库已归档。功能已合并到统一插件：
+
+👉 **[nowledge-mem-plugins](https://github.com/ferstar/nowledge-mem-plugins)**
+
+---
+
 # mem-persist
 
 Save Claude Code / Codex CLI 会话到 Nowledge Mem 服务器。
